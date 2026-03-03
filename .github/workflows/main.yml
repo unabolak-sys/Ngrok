@@ -1,4 +1,4 @@
-name: RDP Tanpa Key (Bore)
+name: RDP Tanpa Key (Bore Fixed)
 
 on:
   workflow_dispatch:
@@ -16,23 +16,14 @@ jobs:
       - name: Setup System (Richo Config)
         run: |
           Write-Host "🚀 Mengkonfigurasi Sistem..."
-          
-          # A. Enable RDP
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
-          
-          # B. Matikan Firewall (Supaya koneksi lancar)
           Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-          
-          # C. Set Password
           $password = ConvertTo-SecureString -String "P@ssw0rd123!" -AsPlainText -Force
           Set-LocalUser -Name "runneradmin" -Password $password
-          
-          # D. Ubah Nama ke richo
           $newName = "richo"
           $env:COMPUTERNAME = $newName
           [Environment]::SetEnvironmentVariable("COMPUTERNAME", $newName, "User")
-          
           Write-Host "✅ System Configured (Name: richo)"
 
       # 2. Setup Virtual Keyboard Shortcut
@@ -48,7 +39,7 @@ jobs:
           Copy-Item $ShortcutLocation -Destination "C:\Users\Public\Desktop\Virtual Keyboard.lnk" -Force
           Write-Host "✅ Virtual Keyboard ready on Desktop"
 
-      # 3. Jalankan Tunnel (Bore)
+      # 3. Jalankan Tunnel (Bore) - FIXED
       - name: Start Bore Tunnel
         run: |
           Write-Host "⬇️ Downloading Bore..."
@@ -56,19 +47,17 @@ jobs:
           Expand-Archive "bore.zip" -DestinationPath "."
           
           Write-Host "🚀 Starting Bore Tunnel..."
-          # Jalankan bore dan simpan log-nya ke file biar bisa kita baca port-nya
           Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore_log.txt" -NoNewWindow
           
-          Write-Host "⏳ Menunggu koneksi (5 detik)..."
-          Start-Sleep -Seconds 5
+          Write-Host "⏳ Menunggu koneksi (8 detik)..."
+          Start-Sleep -Seconds 8
           
-          # Baca file log untuk mencari Port yang dikasih
           if (Test-Path "bore_log.txt") {
-            $logContent = Get-Content "bore_log.txt"
-            Write-Host "📄 Log Output: $logContent"
+            # FIX: Pakai -Raw agar dibaca sebagai satu string utuh
+            $logContent = Get-Content "bore_log.txt" -Raw
+            Write-Host "📄 RAW LOG: $logContent"
             
-            # Ambil angka port dari log
-            if ($logContent -match "listening at bore.pub:(\d+)") {
+            if ($logContent -match "bore.pub:(\d+)") {
                 $port = $matches[1]
                 Write-Host "========================================="
                 Write-Host "✅ RDP SIAP AKSES!"
@@ -76,11 +65,9 @@ jobs:
                 Write-Host "🔗 ALAMAT RDP : bore.pub:$port"
                 Write-Host "👤 Username   : runneradmin"
                 Write-Host "🔑 Password   : P@ssw0rd123!"
-                Write-Host "⌨️ Feature    : Virtual Keyboard di Desktop"
                 Write-Host "========================================="
-                Write-Host "⚠️ Masukkan alamat 'bore.pub:$port' ke RDP kamu."
             } else {
-                Write-Warning "⚠️ Gagal membaca port otomatis. Cek log manual di atas."
+                Write-Warning "⚠️ Gagal ambil port otomatis. Cek 'RAW LOG' di atas manual."
             }
           }
 
@@ -88,13 +75,4 @@ jobs:
       - name: Keep Alive
         run: |
           Write-Host "🔄 Menjaga sesi tetap aktif..."
-          while ($true) { 
-            # Tampilkan ulang log setiap 1 menit biar gampang dilihat kalau ke-scroll
-            if (Test-Path "bore_log.txt") {
-                $logContent = Get-Content "bore_log.txt" | Select-Object -Last 1
-                if ($logContent -match "listening at bore.pub:(\d+)") {
-                    Write-Host "🔗 RDP MASIH AKTIF DI: bore.pub:$($matches[1])"
-                }
-            }
-            Start-Sleep -Seconds 60 
-          }
+          while ($true) { Start-Sleep -Seconds 60 }
