@@ -1,0 +1,96 @@
+name: RDP Ngrok (No VPN Client)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. Setup System (RDP + Firewall + Password + Name)
+      - name: Setup System (Richo Config)
+        run: |
+          Write-Host "🚀 Mengkonfigurasi Sistem..."
+          
+          # A. Enable RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
+          
+          # B. Matikan Firewall (Wajib buat Ngrok)
+          Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+          
+          # C. Set Password
+          $password = ConvertTo-SecureString -String "P@ssw0rd123!" -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $password
+          
+          # D. Ubah Nama ke richo
+          $newName = "richo"
+          $env:COMPUTERNAME = $newName
+          [Environment]::SetEnvironmentVariable("COMPUTERNAME", $newName, "User")
+          
+          Write-Host "✅ System Configured (Name: richo)"
+
+      # 2. Setup Virtual Keyboard Shortcut (Sesuai Request)
+      - name: Setup Virtual Keyboard Shortcut
+        run: |
+          Write-Host "⌨️ Creating Virtual Keyboard Shortcut..."
+          $SourceFileLocation = "$env:SystemRoot\System32\osk.exe"
+          $ShortcutLocation = "$env:USERPROFILE\Desktop\Virtual Keyboard.lnk"
+          $WScriptShell = New-Object -ComObject WScript.Shell
+          $Shortcut = $WScriptShell.CreateShortcut($ShortcutLocation)
+          $Shortcut.TargetPath = $SourceFileLocation
+          $Shortcut.Save()
+          Copy-Item $ShortcutLocation -Destination "C:\Users\Public\Desktop\Virtual Keyboard.lnk" -Force
+          Write-Host "✅ Virtual Keyboard ready on Desktop"
+
+      # 3. Install & Start Ngrok Tunnel
+      - name: Start Ngrok Tunnel
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          if ($env:NGROK_AUTH_TOKEN -eq $null) {
+            Write-Error "❌ NGROK_AUTH_TOKEN belum di-set di GitHub Secrets!"
+            exit 1
+          }
+
+          Write-Host "⬇️ Downloading Ngrok..."
+          Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
+          Expand-Archive "ngrok.zip" -DestinationPath "."
+          
+          Write-Host "🔑 Authenticating Ngrok..."
+          .\ngrok.exe config add-authtoken $env:NGROK_AUTH_TOKEN
+          
+          Write-Host "🚀 Starting Tunnel on Port 3389..."
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389" -NoNewWindow
+          
+          # Tunggu sebentar biar tunnel connect
+          Start-Sleep -Seconds 5
+          
+          # Ambil URL Public dari API Local Ngrok
+          try {
+            $tunnels = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
+            $publicUrl = $tunnels.tunnels[0].public_url
+            $cleanUrl = $publicUrl -replace "tcp://", ""
+            
+            Write-Host "========================================="
+            Write-Host "✅ TUNNEL BERHASIL!"
+            Write-Host "========================================="
+            Write-Host "🔗 ALAMAT RDP : $cleanUrl"
+            Write-Host "👤 Username   : runneradmin"
+            Write-Host "🔑 Password   : P@ssw0rd123!"
+            Write-Host "⌨️ Feature    : Virtual Keyboard di Desktop"
+            Write-Host "========================================="
+          } catch {
+            Write-Error "❌ Gagal mengambil URL Ngrok. Pastikan Token benar."
+          }
+
+      # 4. Keep Alive
+      - name: Keep Alive
+        run: |
+          Write-Host "🔄 Menjaga sesi tetap aktif..."
+          while ($true) { Start-Sleep -Seconds 60 }
